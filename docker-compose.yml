@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - 6673:6673
+    volumes:
+      - /app/node_modules
+    environment:
+      - DB_HOST=mongo
+      - DB_NAME=spacex
+      - DB_USERNAME=root
+      - DB_PASSWORD=toor
+
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    ports:
+      - 27017:27017
+    volumes:
+      - ./init-mongo.sh:/docker-entrypoint-initdb.d/init-mongo.sh
+    environment:
+      - MONGO_INITDB_DATABASE=spacex
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=toor
+  
