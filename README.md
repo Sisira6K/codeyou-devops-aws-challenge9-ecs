@@ -41,6 +41,8 @@ Verify that the API is accessible on the appropriate port.
 ### **Step 3: Set Up a GitHub Actions CI/CD Pipeline**
 Create a workflow file at `.github/workflows/main.yml` in your repository.
 
+**Reminder: Setup your repo credentials for your DOCKERHUB_USERNAME and DOCKERHUB_PASSWORD**
+
 #### **GitHub Actions Workflow:**
 ```yaml
 name: Main - CI/CD Pipeline
@@ -111,33 +113,11 @@ jobs:
           trivy image ${{ secrets.DOCKERHUB_USERNAME }}/spacex-api:latest
 ```
 
-### **Step 4: Update the ECS Cluster on Deployment**
-Add a job to the CI/CD pipeline to trigger an ECS service update after deploying a new image.
-
-```yaml
-  update-ecs:
-    name: Update ECS Service
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets. AWS_REGION }}
-      - name: Update ECS Service
-        run: |
-          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER_NAME }} --service ${{ secrets.ECS_SERVICE_NAME }} --force-new-deployment
-```
-
-Replace `YourClusterName` and `YourServiceName` with the actual ECS resource names.
-
 ---
 
 ## **Part 3: ECS Cluster and Service Setup**
 
-### **Step 5: Create an ECS Cluster with Fargate**
+### **Step 4: Create an ECS Cluster with Fargate**
 - Navigate to AWS ECS.
 - Create a new cluster (`Networking only` for Fargate).
 - Name the cluster (`FargateDemoCluster`).
@@ -145,7 +125,7 @@ Replace `YourClusterName` and `YourServiceName` with the actual ECS resource nam
   - **NOTE**: Do not use ***your*** subnet, the Load Balancer and Target Group step later will run into an issue with this since we are using Fargate if you use your personal subnets.
 - Click **Create**.
 
-### **Step 6: Create a Task Definition**
+### **Step 5: Create a Task Definition**
 - Go to **Task Definitions**.
 - Create a new task definition for **Fargate**.
 - Set parameters:
@@ -164,7 +144,7 @@ Replace `YourClusterName` and `YourServiceName` with the actual ECS resource nam
   - **Port Mappings:** Map container port 6673
 - Save and **Register**.
 
-### **Step 7: Create an ECS Service**
+### **Step 6: Create an ECS Service**
 - Navigate to your ECS cluster.
 - Click **Create Service**.
 - Choose the task definition created in Step 6.
@@ -173,7 +153,7 @@ Replace `YourClusterName` and `YourServiceName` with the actual ECS resource nam
   - **Number of Tasks:** Start with 1-2.
 - Click **Deploy**.
 
-### **Step 8: Configure Load Balancing and Security**
+### **Step 7: Configure Load Balancing and Security**
 - **Create a Target Group:**
   - Target type: **IP**
   - Protocol/Port: **HTTP/6673**
@@ -181,9 +161,47 @@ Replace `YourClusterName` and `YourServiceName` with the actual ECS resource nam
 - **Associate with an ALB:**
   - Modify ALB listener rules to forward traffic from port 80 to this target group.
 
-### **Step 9: Set Security Groups**
+### **Step 8: Set Security Groups**
 - Ensure security groups allow HTTP traffic.
 - Test service using the ALB DNS name.
+
+---
+
+
+## **Part 4: Add ECS Update to Pipeline**
+
+### **Step 9: Add job to update ECS Cluster Service**
+Add a job to the CI/CD pipeline to trigger an ECS service update after deploying a new image.
+```yaml
+  update-ecs:
+    name: Update ECS Service
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets. AWS_REGION }}
+      - name: Update ECS Service
+        run: |
+          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER_NAME }} --service ${{ secrets.ECS_SERVICE_NAME }} --force-new-deployment
+```
+
+
+Replace `YourClusterName` and `YourServiceName` with the actual ECS resource names.
+
+**Reminder: Setup the secrets that are in this new job.**
+
+### **Step 10: Add workflow dispatch for manual pipeline runs**
+- It canbe useful to manually trigger pipeline runs so add the following to your `on` statement:
+```yml
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+```
 
 ---
 
