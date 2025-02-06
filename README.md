@@ -40,6 +40,7 @@ Verify that the API is accessible on the appropriate port.
 
 ### **Step 3: Set Up a GitHub Actions CI/CD Pipeline**
 Create a workflow file at `.github/workflows/main.yml` in your repository.
+- **NOTE**: We are intentionally allowing the audit step to fail because this repo has too many vulnerabilities to address but we still want to know about them.
 
 **Reminder: Setup your repo credentials for your DOCKERHUB_USERNAME and DOCKERHUB_PASSWORD**
 
@@ -80,10 +81,13 @@ jobs:
       - name: Install Dependencies
         run: npm install
       - name: Run npm Audit
-        run: npm audit
+        run: npm audit || echo "Failed - Vulnerabilities detected, pipeline continuing"
 
   build-and-push:
     name: Build and Push Docker Image
+    needs:
+      - lint
+      - dependency-scan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -101,13 +105,13 @@ jobs:
 
   container-scan:
     name: Scan Docker Image with Trivy
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Install Trivy
         run: |
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.40.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.40.0_Linux-64bit.deb
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/master/contrib/install.sh | sh -s -- -b /usr/local/bin
       - name: Scan Docker Image
         run: |
           trivy image ${{ secrets.DOCKERHUB_USERNAME }}/spacex-api:latest
@@ -119,51 +123,76 @@ jobs:
 
 ### **Step 4: Create an ECS Cluster with Fargate**
 - Navigate to AWS ECS.
-- Create a new cluster (`Networking only` for Fargate).
-- Name the cluster (`FargateDemoCluster`).
-- Associate it with the student VPC and the default subnet.
-  - **NOTE**: Do not use ***your*** subnet, the Load Balancer and Target Group step later will run into an issue with this since we are using Fargate if you use your personal subnets.
+- Create a new cluster with Infrastructure as "AWS Fargate (serverless)".
+- Name the cluster (`SpaceX-Cluster`).
+- \*Optionally: Enable CloudWatch Container Insights under the Monitoring section
+- Tag it with `Owner` where the value is `<insert your username>`
 - Click **Create**.
 
 ### **Step 5: Create a Task Definition**
 - Go to **Task Definitions**.
 - Create a new task definition for **Fargate**.
 - Set parameters:
-  - **Task Name:** `SpaceXAPITask`
-  - **Task Role:** #TODO: Add Role here
+  - **Task Definition Family Name:** `SpaceXAPITask`
+  - **Launch Type:** AWS Fargate
+  - **OS, Architecture:** Linux/X86_64
   - **Network Mode:** `awsvpc`
+  - **Memory and CPU:** 512 CPU (0.5vCPU) and 512MB Memory
+  - **Task Role:** N/A
+  - **Task Execution Role:** DefaultEcsTaskExecutionRole
 - Add the API container:
-  - **Container Name:** `SpaceXAPIContainer`
-  - **Image:** `docker.io/<username>/spacex-api:latest`
-  - **Memory and CPU:** 512 CPU (0.5vCPU) and 512MB Memory
+  - **Container Name:** `spacex-api`
+  - **Essential Container:** NO. This is because of image problems and debugging required.
+  - **Image:** `docker.io/<your dockerhub username>/spacex-api:latest`
   - **Port Mappings:** Map container port 6673
-- Add the DB container:
-  - **Container Name:** `SpaceXAPIContainer`
-  - **Image:** `docker.io/<username>/spacex-api:latest`
-  - **Memory and CPU:** 512 CPU (0.5vCPU) and 512MB Memory
-  - **Port Mappings:** Map container port 6673
+  - **Environment Variables:** Add the following envvars:
+      - DB_HOST=localhost
+      - DB_NAME=spacex
+      - DB_USERNAME=root
+      - DB_PASSWORD=toor
+  - **OPTIONAL: Configure Log collection to use awslogs-group of `/ecs/<your-aws-username>/spacex-api`**
+      - You will need to go create this log group in CloudWatch Logs before hitting submit to create this Task Definition
+
+- Add the DB container by clicking `Add container`:
+  - **Container Name:** `spacex-db`
+  - **Essential Container:** Yes
+  - **Image:** `docker.io/mongo:6.0`
+  - **Port Mappings:** Map container port 27017
+  - **Environment Variables:** Add the following envvars:
+      - MONGO_INITDB_DATABASE=spacex
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=toor
+  - **OPTIONAL: Configure Log collection to use awslogs-group of `/ecs/<your-aws-username>/spacex-db`**
+      - You will need to go create this log group in CloudWatch Logs before hitting submit to create this Task Definition
 - Save and **Register**.
 
 ### **Step 6: Create an ECS Service**
 - Navigate to your ECS cluster.
 - Click **Create Service**.
-- Choose the task definition created in Step 6.
-- Configure service:
+- Choose `Capacity provider strategy` and make sure we have a capacity provider listed for FARGATE with Base 0 and Weight 1
+- **Platform version:** LATEST
+- **Deployment Configuration:**
+  - **Application type:** `Service`
+  - **Task definition Family:** SpaceXAPITask
+  - **Revision:** (LATEST), generally be sure you know which revision you choose. Default and Latest are typically not the same.
   - **Service Name:** `SpaceXAPIService`
-  - **Number of Tasks:** Start with 1-2.
+  - **Number of Tasks:** Start with 1.
+  - **Availability Zone rebalancing**: OFF
 - Click **Deploy**.
 
 ### **Step 7: Configure Load Balancing and Security**
 - **Create a Target Group:**
   - Target type: **IP**
+  - IP Address: Get the private IP address of the running Task
   - Protocol/Port: **HTTP/6673**
+  - **NOTE**: When registering the target make sure to click `Incldue as pending below` and THEN you can `Create target group`. This is easy to miss. Ensure that the availability zone happens to correspond to one of the subnets that the Load Balancer cares about.
   - Health check path: `/`
 - **Associate with an ALB:**
-  - Modify ALB listener rules to forward traffic from port 80 to this target group.
+  - Modify ALB listener rules to forward traffic from port 80 (or an unused port of some kind) to this target group.
 
 ### **Step 8: Set Security Groups**
-- Ensure security groups allow HTTP traffic.
-- Test service using the ALB DNS name.
+- Ensure security groups allow traffic on the from the internet on the port you chose for your ALB.
+- Test service using the ALB DNS name. NOTE: The API still has some bugs in deployment, don't be surprised if the container is down and routing to the Application Load Balancer's DNS name fails. Most important is to understand these parts.
 
 ---
 
@@ -171,7 +200,7 @@ jobs:
 ## **Part 4: Add ECS Update to Pipeline**
 
 ### **Step 9: Add job to update ECS Cluster Service**
-Add a job to the CI/CD pipeline to trigger an ECS service update after deploying a new image.
+Add a job to the CI/CD pipeline to trigger an ECS service update after deploying a new image. This will force a new deployment and ***because we tagged our earlier image `latest`*** it will automatically pull the image of the same name from. The effect is that it automatically grabs the latest image we built in the earlier job.
 ```yaml
   update-ecs:
     name: Update ECS Service
