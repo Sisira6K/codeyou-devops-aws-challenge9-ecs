@@ -16,8 +16,8 @@ This guide provides a complete walkthrough of deploying the SpaceX-API to AWS EC
 
 ### **Step 1: Clone the Repository**
 ```bash
-git clone https://github.com/your-org/spacex-api.git
-cd spacex-api
+git clone https://github.com/cypher4859/codeyou-devops-aws-challenge9-ecs
+cd codeyou-devops-aws-challenge9-ecs
 ```
 
 Ensure that the repository includes a `Dockerfile` that builds the SpaceX-API application.
