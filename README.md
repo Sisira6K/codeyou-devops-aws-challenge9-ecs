@@ -10,6 +10,8 @@ This guide provides a complete walkthrough of deploying the SpaceX-API to AWS EC
 - Configure security and networking for proper accessibility
 - Automate ECS service updates via the CI/CD pipeline
 
+***NOTE***: This challenge will use the default VPC and default subnets so that we can make use of the default Load Balancer in the last steps.
+
 ---
 
 ## **Part 1: Preparing the SpaceX-API for Deployment**
@@ -124,8 +126,12 @@ jobs:
 ### **Step 4: Create an ECS Cluster with Fargate**
 - Navigate to AWS ECS.
 - Create a new cluster with Infrastructure as "AWS Fargate (serverless)".
-- Name the cluster (`SpaceX-Cluster`).
+- Name the cluster `SpaceX-Cluster`.
 - \*Optionally: Enable CloudWatch Container Insights under the Monitoring section
+- In the `Networking` section make sure to configure the cluster to use the Default `-` VPC and the following subnets which already exist:
+    - `subnet-0243668670d02534c`
+    - `subnet-021d0e5aee26923da`
+    - `subnet-03224a2574b748db6`
 - Tag it with `Owner` where the value is `<insert your username>`
 - Click **Create**.
 
@@ -188,6 +194,11 @@ jobs:
   - **NOTE**: When registering the target make sure to click `Incldue as pending below` and THEN you can `Create target group`. This is easy to miss. Ensure that the availability zone happens to correspond to one of the subnets that the Load Balancer cares about.
   - Health check path: `/`
 - **Associate with an ALB:**
+  - Associate with an existing ALB called `Default-App-Load-Balancer`
+  - This ALB has access to route traffic to the following (default) subnets which already exist:
+    - `subnet-0243668670d02534c`
+    - `subnet-021d0e5aee26923da`
+    - `subnet-03224a2574b748db6`
   - Modify ALB listener rules to forward traffic from port 80 (or an unused port of some kind) to this target group.
 
 ### **Step 8: Set Security Groups**
